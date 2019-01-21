@@ -6,21 +6,23 @@
           <div class="kbox my-3">
             <div class="kbox-title"><h5>Tramas recibidas cada minuto</h5></div>
             <div class="kbox-content p-0">
-              <v-chart :options="polar"/>
+              <v-chart :options="chart_tramas_recibidas"/>
             </div>
           </div>
         </div>
         <div class="col-sm-4">
           <div class="kbox my-3">
-            <div class="kbox-title"><h5>Equipos conectados</h5></div>
-            <div class="kbox-content">
+            <div class="kbox-title"><h5>Equipos conectados <span class="pull-right">Total <span class="label label-success">{{ trackers.length }}</span></span></h5></div>
+            <div class="kbox-content p-0">
+              <v-chart :options="chart_equipos_conectados"/>
             </div>
           </div>
         </div>
         <div class="col-sm-4">
           <div class="kbox my-3">
             <div class="kbox-title"><h5>Puertos</h5></div>
-            <div class="kbox-content">
+            <div class="kbox-content p-0">
+              <v-chart :options="chart_puertos"/>
             </div>
           </div>
         </div>
@@ -29,25 +31,30 @@
         <div class="col-md-6 track-list">
           <div class="kbox">
             <div class="kbox-title">
-              <h5>Track List
-                <span class="label" v-bind:class="[socket.connected ? 'label-primary' : 'label-warning']">{{ socket.connected ? 'Conectado' : 'Desconectado'}}</span>
-                <span class="label label-primary pull-right">{{ trackers.length }}</span>
+              <h5>Lista de equipos
+                <span class="label pull-right" v-bind:class="[socket.connected ? 'label-primary' : 'label-warning']">{{ socket.connected ? 'Conectado' : 'Desconectado'}}</span>
               </h5>
             </div>
             <div class="kbox-content">
               <div class="row">
-                <div class="col-sm-8">
+                <div class="col-sm-6">
                   <input type="text" class="form-control form-control-sm" placeholder="Buscar..." v-model="search">
                 </div>
-                <div class="col-sm-4">
+                <div class="col-sm-3">
                   <select v-model="select_port" class="form-control form-control-sm">
-                    <option value="">Todos los puertos</option>
-                    <option v-for="(port, index) in ports" :key="index" :value="port">Puerto {{port}}</option>
+                    <option value="">Puerto</option>
+                    <option v-for="(port, index) in ports" :key="index" :value="port.name">{{port.name}} ({{port.value}})</option>
+                  </select>
+                </div>
+                <div class="col-sm-3">
+                  <select v-model="select_status" class="form-control form-control-sm">
+                    <option value="">Estado</option>
+                    <option v-for="(status, index) in chart_equipos_conectados.series[0].data" :key="index" :value="status.name == 'Conectados' ? 1 : -1">{{status.name}} ({{status.value}})</option>
                   </select>
                 </div>
               </div>
             </div>
-            <div class="kbox-content p-0">
+            <div class="kbox-content tracker-list">
               <ul class="list-group list-group-flush">
                 <li class="list-group-item"
                 v-for="(track, index) in filterTrackers" :key="index"
@@ -56,7 +63,11 @@
                   <span class="label label-info mr-2">{{ index+1 }}</span>
                   <span class="font-weight-bold mr-2">{{ track.imei }}</span>
                   <span class="label">{{ track.tramas[0].receptor }}</span>
-                  <span class="pull-right">{{ track.tramas[0].DATETIME }}</span>
+                  <span class="pull-right">
+                    {{ track.tramas[0].DATETIME }}
+                    <span v-if="track.online" class="label label-primary track-status" title="Conectado"></span>
+                    <span v-if="!track.online" class="label label-danger track-status" title="Desconectado"></span>
+                  </span>
                 </li>
                 <li class="list-group-item" v-if="!filterTrackers.length">
                   <div class="alert alert-info">Sin Resultados</div>
@@ -82,6 +93,14 @@
                 </div>
               <div class="kbox-content">
                 <div class="row">
+                  <div class="col-12">
+                    <span v-if="tram_select.ES_TRAMA_LOGIN" class="label label-default">LOGIN</span>
+                    <span v-if="tram_select.ES_TRAMA_POSICION" class="label label-info">POSICIÓN</span>
+                    <span v-if="tram_select.ES_TRAMA_EVENTO" class="label label-warning">EVENTO</span>
+                    <span v-if="tram_select.ES_TRAMA_RESPUESTA" class="label label-success">RESPUESTA</span>
+                  </div>
+                </div>
+                <div class="row mt-2">
                   <div class="col-md-2 tram-param">
                     {{ tram_select.FECHA }}
                     <div class="value">FECHA</div>
@@ -109,7 +128,7 @@
                 </div>
                 <div class="row mt-2">
                   <div class="col-md-2 tram-param">
-                    {{ tram_select.SENAL }}
+                    <span class="label" v-bind:class="[tram_select.SENAL == 'A' ? 'label-primary' : 'label-danger']">{{ tram_select.SENAL }}</span>
                     <div class="value">SEÑAL</div>
                   </div>
                   <div class="col-md-2 tram-param">
@@ -147,18 +166,26 @@
               <div class="kbox-footer">
                 <div class="row text-center">
                   <div class="col-sm-3">
-                    <button class="btn btn-primary" v-on:click="sendCommand(1)">Posición</button>
+                    <button class="btn btn-primary" v-on:click="sendCommand(3)">Posición</button>
                   </div>
                   <div class="col-sm-3">
-                    <button class="btn btn-danger" v-on:click="sendCommand(3)">Apagar</button>
+                    <button class="btn btn-danger" v-on:click="sendCommand(2)">Apagar</button>
                   </div>
                   <div class="col-sm-3">
-                    <button class="btn btn-success" v-on:click="sendCommand(2)">Encender</button>
+                    <button class="btn btn-success" v-on:click="sendCommand(1)">Encender</button>
                   </div>
                   <div class="col-sm-3">
                     <button class="btn btn-warning" v-on:click="sendCommand(4)">Reiniciar</button>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+          <div v-else>
+            <div class="kbox">
+              <div class="kbox-title"><h5>Detalles de trama</h5></div>
+              <div class="kbox-content">
+                <div class="alert alert-info">Seleccione un dispositivo para ver su información</div>
               </div>
             </div>
           </div>
@@ -169,9 +196,11 @@
 </template>
 
 <script>
-import io from 'socket.io-client';
-import ECharts from 'vue-echarts/components/ECharts';
-import 'echarts/lib/chart/line';
+import io from 'socket.io-client'
+import ECharts from 'vue-echarts/components/ECharts'
+import 'echarts/lib/chart/line'
+import 'echarts/lib/chart/bar'
+import 'echarts/lib/chart/pie'
 import 'echarts/lib/component/tooltip'
 
 export default {
@@ -180,53 +209,93 @@ export default {
     'v-chart': ECharts
   },
   data() {
-    let data = [];
-
     return {
-      data: data,
+      data_tramas_recibidas: [],
       history_limit: 7,
       connected: false,
       new_tram: false,
       user: '',
       search: '',
       select_port: '',
+      select_status: '',
       num_trams_now: 0,
       limit_data_graph: 50,
-      ports: ['8500','8501','8502','8503','8504','8505','8506','8507','8508','8508','8509','8510','8511','8512','8513','8514'],
+      ports: [],
       track_select: null,
       tram_select: null,
       trackers: [],
-      socket : io('34.218.245.39:3006'),
-      polar: {
+      socket : io('https://yeci.online:3006'),
+      chart_tramas_recibidas: {
+        color: ['#1ab394'],
         tooltip: {
           trigger: 'axis',
           formatter: function (params) {
-              params = params[0];
-              return params.name.substr(-8) + ' - ' + params.value[1] + ' Tramas';
+            params = params[0];
+            return params.name.substr(-8, 5) + ' - ' + params.value[1] + ' Tramas';
           },
           axisPointer: {
-              animation: false
+            animation: false
           }
-      },
-      xAxis: {
+        },
+        xAxis: {
           type: 'time',
           splitLine: {
-              show: true
+            show: true
           }
-      },
-      yAxis: {
+        },
+        yAxis: {
           type: 'value',
           splitLine: {
-              show: true
+            show: true
           }
-      },
-      series: [{
+        },
+        series: [{
           type: 'line',
           showSymbol: false,
           hoverAnimation: true,
-          data: data
-      }],
+          data: []
+        }],
         animationDuration: 2000
+      },
+      chart_equipos_conectados: {
+        color: ['#1ab394','#ed5565'],
+        tooltip : {
+            trigger: 'item',
+            formatter: "{b} : {c} ({d}%)"
+        },
+        series : [
+            {
+                type: 'pie',
+                data:[
+                    {value:0, name: 'Conectados'},
+                    {value:0, name: 'Desconectados'}
+                ]
+            }
+        ]
+      },
+      chart_puertos: {
+        color: ['#1ab394','#ed5565', '#d1dade'],
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: [
+            {
+                type: 'category',
+                data: [],
+                name: 'Puerto'
+            }
+        ],
+        yAxis: [
+            {
+                type: 'value',
+                name: 'Equipos',
+            }
+        ],
+        series: [
+          {type: 'bar', stack: 'vehiculos', name: 'Conectados', data: []},
+          {type: 'bar', stack: 'vehiculos', name: 'Desconectados', data: []},
+          {type: 'line', name: 'Total', data: []}
+        ]
       }
     }
   },
@@ -254,6 +323,39 @@ export default {
       } else {
         alert('Estas desconectado del servidor, verifica tu conexión e intenta de nuevo');
       }
+    },
+    updateChartEquiposConectados() {
+      this.chart_equipos_conectados.series[0].data[0].value = this.trackers.filter(t => t.online).length;// Conectados
+      this.chart_equipos_conectados.series[0].data[1].value = this.trackers.filter(t => !t.online).length;// Conectados
+    },
+    updateChartPuertos() {
+      var puertos = this.trackers.reduce((p, t) => {
+        var puerto = t.tramas[0].receptor;
+        if (!p.hasOwnProperty(puerto)) {
+          p[puerto] = 0;
+        }
+        p[puerto]++;
+        return p;
+      }, {});
+      this.ports = Object.keys(puertos).map(p => {
+        return {
+          name: p,
+          value: puertos[p],
+          conectados: this.trackers.filter(t => t.online && t.tramas[0].receptor == p).length,
+          desconectados: this.trackers.filter(t => !t.online && t.tramas[0].receptor == p).length
+        };
+      });
+      this.chart_puertos.xAxis[0].data = [];
+      this.chart_puertos.series[0].data = [];
+      this.chart_puertos.series[1].data = [];
+      this.chart_puertos.series[2].data = [];
+      for (let i = 0; i < this.ports.length; i++) {
+        var p = this.ports[i];
+        this.chart_puertos.xAxis[0].data.push(p.name);
+        this.chart_puertos.series[0].data.push(p.conectados);
+        this.chart_puertos.series[1].data.push(p.desconectados);
+        this.chart_puertos.series[2].data.push(p.value);
+      }
     }
   },
   mounted() {
@@ -264,6 +366,8 @@ export default {
     });
     this.socket.on('tracker_list', (tracker_list) => {
       this.trackers = tracker_list;
+      this.updateChartEquiposConectados();
+      this.updateChartPuertos();
     });
     this.socket.on('trama', (data) => {
       let track = this.trackers.find(obj => {
@@ -274,25 +378,44 @@ export default {
         if (track.tramas.length >= this.history_limit) {
           track.tramas.pop(); // Remove end
         }
-        if (this.track_select) {
+        if (this.track_select && !this.new_tram) {
           this.new_tram = track.imei == this.track_select.imei;
         }
+        if (!track.online) { // Estaba desconectado
+          this.updateChartEquiposConectados();
+          this.updateChartPuertos();
+        }
+        track.online = true;
+        track.socket = this.socket.id;
       } else {
-        this.trackers.push({imei: data.IMEI, tramas: [data]});
+        this.trackers.push({imei: data.IMEI, online: true, socket: this.socket.id, tramas: [data]});
+        this.updateChartEquiposConectados();
+        this.updateChartPuertos();
       }
-      this.num_trams_now++;       
+      this.num_trams_now++;
+    });
+    this.socket.on('track_disconnect', (data) => {
+      console.log('Se desconectó: ', data);
+      let track = this.trackers.find(obj => {
+        return obj.imei == data
+      });
+      if (track) {
+        track.online = false;
+      }
+      this.updateChartEquiposConectados();
+      this.updateChartPuertos();
     });
     this.socket.on('disconect', () => {
       this.connected = false;
     });
     setInterval(() => {
-      if (this.data.length >= this.limit_data_graph) {
-        this.data.shift();
+      if (this.data_tramas_recibidas.length >= this.limit_data_graph) {
+        this.data_tramas_recibidas.shift();
       }
-      this.data.push({name: (new Date).toLocaleString(), value: [(new Date).toISOString(), this.num_trams_now]});
-      this.polar.series.data = this.data;
+      this.data_tramas_recibidas.push({name: (new Date).toLocaleString(), value: [(new Date).toISOString(), this.num_trams_now]});
+      this.chart_tramas_recibidas.series[0].data = this.data_tramas_recibidas;
       this.num_trams_now = 0;
-    }, 60000);
+    }, 120000);
   },
   computed: {
     filterTrackers: function() {
@@ -307,6 +430,11 @@ export default {
           t => t.tramas[0].receptor == this.select_port
         );
       }
+      if (this.select_status != '') {
+        filtered = filtered.filter(
+          t => (t.online && this.select_status == 1) || (!t.online && this.select_status == -1)
+        );
+      }
       return filtered;
     }
   }
@@ -318,6 +446,20 @@ export default {
     font-weight: 500
   }
   .echarts {
+    width: 100%;
     height: 200px;
+  }
+  .track-status {
+    border-radius: 30px;
+    padding: 5px;
+    height: 15px;
+    width: 15px;
+    display: inline-block;
+    vertical-align: text-bottom;
+  }
+  .tracker-list {
+    padding: 0;
+    max-height: 300px;
+    overflow: auto;
   }
 </style>
