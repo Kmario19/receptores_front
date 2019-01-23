@@ -42,13 +42,13 @@
                 </div>
                 <div class="col-sm-3">
                   <select v-model="select_port" class="form-control form-control-sm">
-                    <option value="">Puerto</option>
+                    <option value="">Puerto [Todos]</option>
                     <option v-for="(port, index) in ports" :key="index" :value="port.name">{{port.name}} ({{port.value}})</option>
                   </select>
                 </div>
                 <div class="col-sm-3">
                   <select v-model="select_status" class="form-control form-control-sm">
-                    <option value="">Estado</option>
+                    <option value="">Estado [Todos]</option>
                     <option v-for="(status, index) in chart_equipos_conectados.series[0].data" :key="index" :value="status.name == 'Conectados' ? 1 : -1">{{status.name}} ({{status.value}})</option>
                   </select>
                 </div>
@@ -239,7 +239,7 @@ import VueGoogleMaps from 'vue-googlemaps'
 Vue.use(VueGoogleMaps, {
   load: {
     // Google API key
-    apiKey: process.env.GOOGLE_MAPS_KEY,
+    apiKey: 'AIzaSyAuUgBnqfQUiBNeRQmrrWeoLcjlvTvPbII',
     // Enable more Google Maps libraries here
     //libraries: ['places'],
     // Use new renderer
