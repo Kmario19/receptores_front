@@ -81,12 +81,12 @@
             <div class="kbox">
               <div class="kbox-title">
                 <h5>Detalles de Trama
-                  <span class="label label-primary" v-if="new_tram" v-on:click="viewNewTram()">Nueva</span>
+                  <span class="label label-primary" v-if="new_tram" v-on:click="changeTram()">Nueva</span>
                 </h5>
                   <div class="pull-right">
-                    <select class="form-control form-control-sm" v-model="tram_select" v-on:change="viewNewTram(true)">
+                    <select class="form-control form-control-sm" v-model="tram_select" v-on:change="changeTram(true)">
                       <option v-for="(tram, index) in track_select.tramas" :key="index" :value="tram">
-                        {{ tram.FECHA }} {{ tram.HORA}}
+                        [{{index+1}}] {{ tram.FECHA }} {{ tram.HORA}}
                       </option>
                     </select>
                   </div>
@@ -136,15 +136,15 @@
                     <div class="value">EVENTO</div>
                   </div>
                   <div class="col-md-2 tram-param">
-                    {{ tram_select.IGNICION }}
+                    <span class="label" v-bind:class="[tram_select.IGNICION == '1' ? 'label-primary' : 'label-danger']">{{ tram_select.IGNICION == '1' ? 'ON' : 'OFF' }}</span>
                     <div class="value">IGNICIÓN</div>
                   </div>
                   <div class="col-md-2 tram-param">
-                    {{ tram_select.VELOCIDAD }}
+                    {{ tram_select.VELOCIDAD }}Km/h
                     <div class="value">VELOCIDAD</div>
                   </div>
                   <div class="col-md-2 tram-param">
-                    {{ tram_select.ODOMETRO }}
+                    {{ tram_select.ODOMETRO }}Km
                     <div class="value">ODOMETRO</div>
                   </div>
                     <div class="col-md-2 tram-param">
@@ -161,6 +161,36 @@
                     {{ tram_select.LNG }}
                     <div class="value">LONGITUD</div>
                   </div>
+                  <div class="col-md-2 tram-param">
+                    {{ tram_select.ORIENTACION }}
+                    <div class="value">ORIENTACIÓN</div>
+                  </div>
+                  <div class="col-md-2 tram-param">
+                    {{ tram_select.AD1 }}
+                    <div class="value">AD1</div>
+                  </div>
+                  <div class="col-md-2 tram-param">
+                    {{ tram_select.AD2 }}
+                    <div class="value">AD2</div>
+                  </div>
+                </div>
+                <div class="row mt-2">
+                  <googlemaps-map
+                    :center.sync="map.center"
+                    :zoom.sync="map.zoom"
+                    :options="map.options">
+
+                    <googlemaps-marker
+                      v-for="marker of map.markers"
+                      :key="marker.id"
+                      :label="{
+                        color: marker === map.currentmarker ? 'white' : 'black',
+                        text: (marker.id+1)+'',
+                      }"
+                      :position="marker.position"
+                      @click="selectMarker(marker.id)"
+                    />
+                  </googlemaps-map>
                 </div>
               </div>
               <div class="kbox-footer">
@@ -202,6 +232,20 @@ import 'echarts/lib/chart/line'
 import 'echarts/lib/chart/bar'
 import 'echarts/lib/chart/pie'
 import 'echarts/lib/component/tooltip'
+import 'vue-googlemaps/dist/vue-googlemaps.css'
+import Vue from 'vue'
+import VueGoogleMaps from 'vue-googlemaps'
+
+Vue.use(VueGoogleMaps, {
+  load: {
+    // Google API key
+    apiKey: process.env.GOOGLE_MAPS_KEY,
+    // Enable more Google Maps libraries here
+    //libraries: ['places'],
+    // Use new renderer
+    useBetaRenderer: false,
+  },
+})
 
 export default {
   name: 'app',
@@ -210,6 +254,16 @@ export default {
   },
   data() {
     return {
+      map: {
+        center: {
+          lat: 10.3845791,
+          lng: -75.4817934,
+        },
+        zoom: 17,
+        options: {},
+        markers: [],
+        currentmarker: null
+      },
       data_tramas_recibidas: [],
       history_limit: 7,
       connected: false,
@@ -299,6 +353,13 @@ export default {
       }
     }
   },
+  watch: {
+    /*map: {
+      currentmarker: function(newMarker, oldMarker) {
+        
+      }
+    }*/
+  },
   methods: {
     sendMessage(e) {
       e.preventDefault();
@@ -309,12 +370,22 @@ export default {
       this.track_select = track;
       this.tram_select = track.tramas[0];
       this.new_tram = false;
+      this.loadMarkers();
     },
-    viewNewTram(verify) {
+    changeTram(verify) {
       if (!verify || verify && this.tram_select == this.track_select.tramas[0]) {
         this.tram_select = this.track_select.tramas[0];
         this.new_tram = false;
+        this.loadMarkers();
+      } else {
+        for (let i = 1; i < this.track_select.tramas.length; i++) {
+          if (this.track_select.tramas[i] == this.tram_select) {
+            this.map.currentmarker = this.map.markers[i];
+            break;
+          }
+        }
       }
+      this.map.center = this.map.currentmarker.position;
     },
     sendCommand(command) {
       if (this.connected) {
@@ -356,6 +427,30 @@ export default {
         this.chart_puertos.series[1].data.push(p.desconectados);
         this.chart_puertos.series[2].data.push(p.value);
       }
+    },
+    clearMarkers: function () {
+      /*for (let i = 0; i < this.map.markers.length; i++) {
+        const mark = this.map.markers[i];
+        mark.setMap(null);
+      }*/
+      this.map.markers = [];
+    },
+    loadMarkers: function () {
+      this.clearMarkers();
+      for (let i = 0; i < this.track_select.tramas.length; i++) {
+        const trama = this.track_select.tramas[i];
+        this.map.markers.push({
+          id: i,
+          position: {lat: parseFloat(trama.LAT), lng: parseFloat(trama.LNG)}
+        });
+      }
+      this.map.currentmarker = this.map.markers[0];
+      this.map.center = this.map.currentmarker.position;
+    },
+    selectMarker: function(id) {
+      this.map.currentmarker = this.map.markers[id];
+      this.tram_select = this.track_select.tramas[id];
+      this.map.center = this.map.currentmarker.position;
     }
   },
   mounted() {
@@ -382,10 +477,11 @@ export default {
           this.new_tram = track.imei == this.track_select.imei;
         }
         if (!track.online) { // Estaba desconectado
+          track.online = true;
           this.updateChartEquiposConectados();
           this.updateChartPuertos();
+          console.log('Reconectado', track.imei);
         }
-        track.online = true;
         track.socket = this.socket.id;
       } else {
         this.trackers.push({imei: data.IMEI, online: true, socket: this.socket.id, tramas: [data]});
@@ -459,7 +555,11 @@ export default {
   }
   .tracker-list {
     padding: 0;
-    max-height: 300px;
+    max-height: 440px;
     overflow: auto;
+  }
+  .vue-google-map {
+    width: 100%;
+    height: 250px;
   }
 </style>
