@@ -4,7 +4,16 @@
       <div class="row">
         <div class="col-sm-4">
           <div class="kbox my-3">
-            <div class="kbox-title"><h5>Tramas recibidas cada minuto</h5></div>
+            <div class="kbox-title">
+              <h5><span v-if="false" v-on:click="chart_pause = !chart_pause" style="cursor: pointer">{{ chart_pause ? '▶️' : '⏸️'}}</span>Tramas recibidas</h5>
+              <span class="pull-right">
+                <select v-model="trams_frecuency" v-on:change="changeFrecuency()" class="form-control form-control-sm">
+                  <option value="second">Por segundo</option>
+                  <option value="minute">Por minuto</option>
+                  <option value="hour">Por hora</option>
+                </select>
+              </span>
+            </div>
             <div class="kbox-content p-0">
               <v-chart :options="chart_tramas_recibidas"/>
             </div>
@@ -12,7 +21,7 @@
         </div>
         <div class="col-sm-4">
           <div class="kbox my-3">
-            <div class="kbox-title"><h5>Equipos conectados <span class="pull-right">Total <span class="label label-success">{{ trackers.length }}</span></span></h5></div>
+            <div class="kbox-title"><h5>Equipos conectados <span class="pull-right">Total <span class="label label-primary">{{ trackers.length }}</span></span></h5></div>
             <div class="kbox-content p-0">
               <v-chart :options="chart_equipos_conectados"/>
             </div>
@@ -232,6 +241,8 @@ import 'echarts/lib/chart/line'
 import 'echarts/lib/chart/bar'
 import 'echarts/lib/chart/pie'
 import 'echarts/lib/component/tooltip'
+import 'echarts/lib/component/legend'
+import 'echarts/lib/component/dataZoom'
 import 'vue-googlemaps/dist/vue-googlemaps.css'
 import Vue from 'vue'
 import VueGoogleMaps from 'vue-googlemaps'
@@ -272,8 +283,22 @@ export default {
       search: '',
       select_port: '',
       select_status: '',
-      num_trams_now: 0,
-      limit_data_graph: 50,
+      counters: {
+        date: (new Date).toLocaleDateString().replace(/-(\d)(?!\d)/g, '-0$1'),
+        trams: {
+          per_hour: {total: 0, history: []},
+          per_minute: {total: 0, history: []},
+          per_second: {total: 0, history: []}
+        },
+        trackers: {
+          per_hour: {connected: 0, disconnected: 0, history: []},
+        }
+      },
+      trams_frecuency: 'minute',
+      chart_pause: false,
+      last_minute: 0,
+      last_hour: 0,
+      data_counter_limit: 50,
       ports: [],
       track_select: null,
       tram_select: null,
@@ -285,7 +310,7 @@ export default {
           trigger: 'axis',
           formatter: function (params) {
             params = params[0];
-            return params.name.substr(-8, 5) + ' - ' + params.value[1] + ' Tramas';
+            return params.name.substr(-8, 8) + ' - ' + params.value[1] + ' Tramas';
           },
           axisPointer: {
             animation: false
@@ -303,8 +328,15 @@ export default {
             show: true
           }
         },
+        dataZoom: {
+          show : true,
+          realtime: true,
+          start : 0,
+          end : 100
+        },
         series: [{
           type: 'line',
+          itemStyle: {normal: {areaStyle: {type: 'default'}}},
           showSymbol: false,
           hoverAnimation: true,
           data: []
@@ -313,17 +345,37 @@ export default {
       },
       chart_equipos_conectados: {
         color: ['#1ab394','#ed5565'],
-        tooltip : {
+        tooltip: {
             trigger: 'item',
-            formatter: "{b} : {c} ({d}%)"
+            formatter: function (p) {
+              return '<span style="color:' + p.color + ';font-size:1.2em">\u25CF</span> ' + p.name + ' ' + p.value + ' (' + (p.percent - 0).toFixed(0) + '%)';
+            }
         },
+        legend: {
+            orient : 'vertical',
+            x : 'left',
+            data:['Conectados', 'Desconectados']
+        },
+        calculable: true,
         series : [
             {
                 type: 'pie',
                 data:[
                     {value:0, name: 'Conectados'},
                     {value:0, name: 'Desconectados'}
-                ]
+                ],
+                itemStyle : {
+                  normal : {
+                      label : {
+                          position : 'inner',
+                          formatter : function (params) {                   
+                            return (params.value - 0).toFixed(0)
+                          },
+                          fontWeight: '600'
+                          
+                      }
+                  }
+                }
             }
         ]
       },
@@ -380,12 +432,25 @@ export default {
       } else {
         for (let i = 1; i < this.track_select.tramas.length; i++) {
           if (this.track_select.tramas[i] == this.tram_select) {
-            this.map.currentmarker = this.map.markers[i];
+            this.map.currentmarker = this.map.markers.find(m => m.id == i);
             break;
           }
         }
       }
-      this.map.center = this.map.currentmarker.position;
+      this.map.center = this.map.currentmarker ? this.map.currentmarker.position : this.map.center;
+    },
+    changeFrecuency() {
+      switch(this.trams_frecuency) {
+        case 'second':
+          this.chart_tramas_recibidas.series[0].data = this.counters.trams.per_second.history;
+          break;
+        case 'minute':
+          this.chart_tramas_recibidas.series[0].data = this.counters.trams.per_minute.history;
+          break;
+        case 'hour':
+          this.chart_tramas_recibidas.series[0].data = this.counters.trams.per_hour.history;
+          break;
+      }
     },
     sendCommand(command) {
       if (this.connected) {
@@ -439,16 +504,18 @@ export default {
       this.clearMarkers();
       for (let i = 0; i < this.track_select.tramas.length; i++) {
         const trama = this.track_select.tramas[i];
-        this.map.markers.push({
-          id: i,
-          position: {lat: parseFloat(trama.LAT), lng: parseFloat(trama.LNG)}
-        });
+        if (trama.LAT && trama.LNG) {
+          this.map.markers.push({
+            id: i,
+            position: {lat: parseFloat(trama.LAT), lng: parseFloat(trama.LNG)}
+          });
+        }
       }
-      this.map.currentmarker = this.map.markers[0];
-      this.map.center = this.map.currentmarker.position;
+      this.map.currentmarker = this.map.markers[0] || null;
+      this.map.center = this.map.currentmarker ? this.map.currentmarker.position : this.map.center;
     },
     selectMarker: function(id) {
-      this.map.currentmarker = this.map.markers[id];
+      this.map.currentmarker = this.map.markers.find(m => m.id == id);
       this.tram_select = this.track_select.tramas[id];
       this.map.center = this.map.currentmarker.position;
     }
@@ -464,13 +531,16 @@ export default {
       this.updateChartEquiposConectados();
       this.updateChartPuertos();
     });
+    this.socket.on('counters', (counters) => {
+      this.counters = counters;
+    });
     this.socket.on('trama', (data) => {
       let track = this.trackers.find(obj => {
         return obj.imei == data.IMEI
       });
       if (track) {
         track.tramas.unshift(data); // Add start
-        if (track.tramas.length >= this.history_limit) {
+        if (track.tramas.length > this.history_limit) {
           track.tramas.pop(); // Remove end
         }
         if (this.track_select && !this.new_tram) {
@@ -488,7 +558,12 @@ export default {
         this.updateChartEquiposConectados();
         this.updateChartPuertos();
       }
-      this.num_trams_now++;
+      this.counters.trams.per_hour.total++;
+      this.counters.trams.per_minute.total++;
+      this.counters.trams.per_second.total++;
+      if (data.error) {
+        this.counters.trams.errors.total++;
+      }
     });
     this.socket.on('track_disconnect', (data) => {
       console.log('Se desconectó: ', data);
@@ -505,13 +580,47 @@ export default {
       this.connected = false;
     });
     setInterval(() => {
-      if (this.data_tramas_recibidas.length >= this.limit_data_graph) {
-        this.data_tramas_recibidas.shift();
+			if (this.counters.trams.per_second.history.length > this.data_counter_limit) {
+				this.counters.trams.per_second.history.shift();
+			}
+			this.counters.trams.per_second.history.push({name: (new Date).toLocaleString(), value: [(new Date).toISOString(), this.counters.trams.per_second.total]});
+			this.counters.trams.per_second.total = 0;
+			if (this.last_minute >= 60) {
+				if (this.counters.trams.per_minute.history.length > this.data_counter_limit) {
+					this.counters.trams.per_minute.history.shift();
+				}
+				this.counters.trams.per_minute.history.push({name: (new Date).toLocaleString(), value: [(new Date).toISOString(), this.counters.trams.per_minute.total]});
+				this.counters.trams.per_minute.total = 0;
+				this.last_minute = 0;
+				this.counters.trackers.per_hour.connected = this.trackers.filter(t => t.online).length;
+				this.counters.trackers.per_hour.disconnected = this.trackers.filter(t => !t.online).length;
+				this.counters.trackers.per_hour.history.push({name: (new Date).toLocaleString(), connected: this.counters.trackers.per_hour.connected, disconnected: this.counters.trackers.per_hour.disconnected});
+				if (this.counters.date != (new Date).toLocaleDateString().replace(/-(\d)(?!\d)/g, '-0$1')) {
+					this.counters = {
+						date: (new Date).toLocaleDateString().replace(/-(\d)(?!\d)/g, '-0$1'),
+						trams: {
+							per_hour: {total: 0, history: []},
+							per_minute: {total: 0, history: []},
+              per_second: {total: 0, history: []},
+              errors: {total: 0}
+						},
+						trackers: {
+							per_hour: {connected: 0, disconnected: 0, history: []},
+						}
+					};
+				}
+			}
+			if (this.last_hour >= 3600) {
+				this.counters.trams.per_hour.history.push({name: (new Date).toLocaleString(), value: [(new Date).toISOString(), this.counters.trams.per_hour.total]});
+				this.counters.trams.per_hour.total = 0;
+				this.last_hour = 0;
+			}
+			this.last_minute++;
+      this.last_hour++;
+      if (!this.chart_pause) {
+        this.changeFrecuency();
       }
-      this.data_tramas_recibidas.push({name: (new Date).toLocaleString(), value: [(new Date).toISOString(), this.num_trams_now]});
-      this.chart_tramas_recibidas.series[0].data = this.data_tramas_recibidas;
-      this.num_trams_now = 0;
-    }, 120000);
+		}, 1000);
   },
   computed: {
     filterTrackers: function() {
